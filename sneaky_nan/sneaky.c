@@ -6,13 +6,14 @@
 
 uint32_t NAN_MASK = 0xFF800000;
 
-void encode(char * str, uint32_t * nan){
-  *nan = *nan & NAN_MASK; // clear low order bits
-  *nan = *nan ^ *((uint32_t *) str);
+void encode(char * str, float * nan){
+  uint32_t * nan_u = (uint32_t *) nan;
+  *nan_u = *nan_u & NAN_MASK; // clear low order bits
+  *nan_u = *nan_u ^ *((uint32_t *) str);
 }
 
-void decode(uint32_t * nan){
-  uint32_t decoded = *nan & 0x000FFFFF; // grab low-order bits
+void decode(float * nan){
+  uint32_t decoded = *((uint32_t *) nan) & 0x000FFFFF; // grab low-order bits
   printf("decoded: %s", &decoded);
 }
 
@@ -32,10 +33,10 @@ int main(int argc, char ** argv){
   assert(isnan(u2f.f));
 
   // encode
-  encode(str, &u2f.u);
+  encode(str, &u2f.f);
 
   assert(isnan(u2f.f));
 
   // decode
-  decode(&u2f.u);
+  decode(&u2f.f);
 }
