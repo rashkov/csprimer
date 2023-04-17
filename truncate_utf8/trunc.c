@@ -1,12 +1,8 @@
 #include <stdio.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <wchar.h>
-#include <locale.h>
 #include <stdint.h>
-
 
 char * INPUT = "./cases";
 
@@ -30,58 +26,80 @@ int main(int argc, char **argv){
 
   fd = open(INPUT, O_RDONLY);
   read_one(fd, &n);
-
-  for(; n >= 0; n--){
-    // read in a character
-    read_one(fd, &c);
-    if (c == '\n') {
-      read_one(fd, &n);
-    }
-    if ((c & UTF_LEN_4_MASK) == UTF_LEN_4_MASK && n < 3){
-      read_through_newline(fd, &c);
-      read_one(fd, &n);
-    }
-    if ((c & UTF_LEN_3_MASK) == UTF_LEN_3_MASK && n < 2){
-      read_through_newline(fd, &c);
-      read_one(fd, &n);
-    }
-    if ((c & UTF_LEN_2_MASK) == UTF_LEN_2_MASK && n < 1){
-      read_through_newline(fd, &c);
-      read_one(fd, &n);
-    }
+  while(1){
     if (n == 0){
-      printf("%c", c);
       read_through_newline(fd, &c);
+      printf("%c", c);
       read_one(fd, &n);
     }
-    // if newline:
-    //   print it
-    //   read(n)
-    //   continue
-    // if unicode_4
-    //   if n < 3
-    //     read through newline
-    //     continue
-    //   else
-    //     print it
-    // if unicode_3
-    //   if n < 2
-    //     read through newline
-    //     continue
-    //   else
-    //     print it
-    // if unicode_2
-    //   if n < 1
-    //     read through newline
-    //     continue
-    //   else
-    //     print it
-    // if n == 0 // time to truncate
-    //   read through newline
-    //   continue
-    // else
-    //   print it
+    for(; n > 0; n--){
+      // read in a character
+      read_one(fd, &c);
+      if (c == '\n') {
+        printf("%c", c);
+        read_one(fd, &n);
+        n++;
+        continue;
+      }
+      if ((c & UTF_LEN_4_MASK) == UTF_LEN_4_MASK && n < 4){
+        read_through_newline(fd, &c);
+        printf("%c", c);
+        read_one(fd, &n);
+        n++;
+        continue;
+      }
+      if ((c & UTF_LEN_3_MASK) == UTF_LEN_3_MASK && n < 3){
+        read_through_newline(fd, &c);
+        printf("%c", c);
+        read_one(fd, &n);
+        n++;
+        continue;
+      }
+      if ((c & UTF_LEN_2_MASK) == UTF_LEN_2_MASK && n < 2){
+        read_through_newline(fd, &c);
+        printf("%c", c);
+        read_one(fd, &n);
+        n++;
+        continue;
+      }
+      if (n == 1){
+        printf("%c", c);
+        read_through_newline(fd, &c);
+        printf("%c", c);
+        read_one(fd, &n);
+        n++;
+        continue;
+      }
+      printf("%c", c);
+      // if newline:
+      //   print it
+      //   read(n)
+      //   continue
+      // if unicode_4
+      //   if n < 3
+      //     read through newline
+      //     continue
+      //   else
+      //     print it
+      // if unicode_3
+      //   if n < 2
+      //     read through newline
+      //     continue
+      //   else
+      //     print it
+      // if unicode_2
+      //   if n < 1
+      //     read through newline
+      //     continue
+      //   else
+      //     print it
+      // if n == 0 // time to truncate
+      //   read through newline
+      //   continue
+      // else
+      //   print it
 
-    printf("%c", c);
+      //printf("%c", c);
+    }
   }
 }
