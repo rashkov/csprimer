@@ -1,8 +1,12 @@
 #include <stdio.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <wchar.h>
+#include <locale.h>
 #include <stdint.h>
+
 
 char * INPUT = "./cases";
 
@@ -12,7 +16,7 @@ char UTF_LEN_4_MASK = 0xF0; // 1111 0xxx
 
 int read_one(int fd, void * buf, char * c){
   if(read(fd, buf, 1) != 1){
-    if(c != NULL){ // dump the final newline before exiting
+    if(c != NULL){
       printf("%c", *c);
     }
     exit(0);
