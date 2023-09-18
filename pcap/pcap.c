@@ -7,6 +7,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <arpa/inet.h>
+#include <assert.h>
 
 typedef struct pcap_hdr_s {
   uint32_t magic_number;   /* magic number */
@@ -29,22 +30,21 @@ char * INPUT = "synflood.pcap";
 
 int main(){
   int fd;
-
   fd = open(INPUT, O_RDONLY);
 
-  size_t header_size = sizeof(pcap_hdr_t);
-  size_t packet_header_size = sizeof(pcap_packet_hdr_t);
+  struct stat statObj;
+  if(fstat(fd, &statObj) < 0)
+      return -1;
+  off_t size = statObj.st_size;
+  printf("%ld \t File size\n", size);
 
-  unsigned char * buf = calloc(1, header_size + packet_header_size);
-  ssize_t res = read(fd, buf, header_size + packet_header_size);
-  if(res == -1){
+  unsigned char * buf = calloc(1, size);
+  ssize_t bytes_read;
+  if((bytes_read = read(fd, buf, size)) == -1){
     perror("Unable to read");
   }
-  //for (size_t i = 0; i < header_size; ++i) {
-  //  printf("%02x ", buf[i]);
-  //}
+  printf("%ld \t Bytes read\n", bytes_read);
 
-  // da buffa (ahnold voice)
   pcap_hdr_t * global = (pcap_hdr_t *) buf;
 
   /*
@@ -54,57 +54,58 @@ int main(){
    * https://datatracker.ietf.org/doc/id/draft-gharris-opsawg-pcap-00.html
    */
   printf("magic number %x\n", global->magic_number); // prints a1b2c3d4
-
   printf("snapshot length (max length of captured packets, in octets) %d\n", global->snaplen);
-
-  //printf("data link type %d\n", global->network & 0xFFFB); // prints zero
   printf("data link type %x\n", global->network);  // prints zero
+  assert(global->network == 0);
 
-  // Because we have a data link type of zero, that means we have LINKTYPE_NULL
-  // which refers to BSD loopback encapsulation https://www.tcpdump.org/linktypes.html
-  // which means that the following frame is a link layer header:
-  // "the link layer header is a 4-byte field, in host byte order, containing a value of 2 for IPv4 packets, a value of either 24, 28, or 30 for IPv6 packets"
+  pcap_packet_hdr_t * pcap_packet_hdr = (pcap_packet_hdr_t *) ((unsigned char *)global + sizeof(pcap_hdr_t));
 
-  pcap_packet_hdr_t * packet = (pcap_packet_hdr_t *) (buf + header_size);
-  printf("cap length %d\n", packet->captured_packet_length); // prints 44 bytes
+  int n = 1;
+  while(n < 4){
+    // Because we have a data link type of zero, that means we have LINKTYPE_NULL
+    // which refers to BSD loopback encapsulation https://www.tcpdump.org/linktypes.html
+    // which means that the following frame is a link layer header:
+    // "the link layer header is a 4-byte field, in host byte order, containing a value of 2 for IPv4 packets, a value of either 24, 28, or 30 for IPv6 packets"
 
-  // read in the next 44 bytes (captured packet length)
-  unsigned char * packet_cap = calloc(packet->captured_packet_length, sizeof(unsigned char));
-  if(read(fd, packet_cap, packet->captured_packet_length) == -1){
-    perror("Unable to read");
+    uint32_t * link_layer_hdr = (uint32_t *) ((unsigned char * )pcap_packet_hdr + sizeof(pcap_packet_hdr_t));
+    struct iphdr * ip_header = (struct iphdr *) ((unsigned char *)link_layer_hdr + sizeof(uint32_t));
+    struct tcphdr * tcp_header = (struct tcphdr *) ((unsigned char *)ip_header + sizeof(struct iphdr));
+
+    // 44 bytes = 4 byte link layer hdr, 20 byte iphdr, 20 byte tcphdr
+    // to advance, the next pcap packet header is global + n*44 or global + n*(captured_packet_length)
+    printf("cap length %d\n", pcap_packet_hdr->captured_packet_length); // prints 44 bytes
+    if(n == 0) assert(pcap_packet_hdr->captured_packet_length == 44);
+
+    // get the link type
+    printf("%d (2 means PF_INET or IP protocol)\n", *link_layer_hdr); // 2 => PF_INET
+                                                                    // aka ipv4
+    assert(*link_layer_hdr == 2);
+    // the 4 byte link-layer header indicates an IPv4 packet
+    // so the remaining 40 bytes must be an IPv4 packet
+    printf("\n%lu (IP header size)\n", sizeof(struct iphdr));
+    printf("%lu (TCP header size)\n", sizeof(struct tcphdr));
+
+    // struct iphdr comes from linux/ip.h
+    printf("%hhu (protocol, TCP is 6)\n", ip_header->protocol);
+    assert(ip_header->protocol == 6);
+    printf("%hu (IP version field, should be 4)\n", ip_header->version);
+    assert(ip_header->version == 4);
+
+    // ChatGPT saved my sanity by pointing out that these are in network byte order
+    // so I must convert to host byte order using ntohl() / noths()
+    printf("%u (seq)\n", ntohl(tcp_header->seq));
+    printf("%u (ack seq)\n", ntohl(tcp_header->ack_seq));
+    printf("%u (source)\n", ntohs(tcp_header->source));
+    printf("%u (dest)\n", ntohs(tcp_header->dest));
+    printf("%u (win)\n", ntohs(tcp_header->window));
+    if(n == 0) assert(ntohs(tcp_header->window) == 512);
+
+
+    // to advance, the next pcap packet header is:
+    //   pcap_packet_hdr + sizeof(pcap_packet_hdr_t) + captured_packet_length
+    pcap_packet_hdr = (pcap_packet_hdr_t *) ((unsigned char *)pcap_packet_hdr + sizeof(*pcap_packet_hdr) + pcap_packet_hdr->captured_packet_length);
+    n++;
   }
-
-  // get the link type
-  printf("%d (2 means PF_INET or IP protocol)\n", *packet_cap); // 2 => PF_INET
-                                                                // aka ipv4
-  // the 4 byte link-layer header indicates an IPv4 packet
-  // so the remaining 40 bytes must be an IPv4 packet
-
-  /* why do we shift four?
-     due to the layout of the IP version field and Internet Header Length (IHL) that are located in the first byte (not 4th byte)
-     of an IP header.
-     The IP version field is actually the most significant 4 bits of the first byte of an ipv4 packet.
-     So if you're reading it as a full byte (8 bits), you're also incorporating the IHL (Internet Header Length) which is the second 4 bits of the first byte.
-     In order to isolate the version you need to shift the first byte 4 bits to the right.
-     This is because the IP version information is in the high 4 bits of the first byte, not in the following 4 bytes.
-  */
-  printf("%d (IP version field, should be 4)\n", *(packet_cap + 4) >> 4);
-
-  // struct iphdr comes from linux/ip.h
-  struct iphdr * foo = (struct iphdr *) ((void *)packet_cap + 4);
-  printf("%hhu (protocol, TCP is 6)\n", foo->protocol);
-  printf("%hu (IP version field, should be 4)\n", foo->version);
-
-  printf("\n%lu (IP header size)\n", sizeof(struct iphdr));
-  printf("%lu (TCP header size)\n", sizeof(struct tcphdr));
-
-  struct tcphdr * bar = (struct tcphdr *) ((void *)foo + sizeof(struct iphdr));
-  printf("\nSkipped ahead %lu bytes\n", (uint64_t)bar - (uint64_t)foo);
-  printf("%u (seq)\n", ntohl(bar->seq));
-  printf("%u (ack seq)\n", ntohl(bar->ack_seq));
-  printf("%u (source)\n", ntohs(bar->source));
-  printf("%u (dest)\n", ntohs(bar->dest));
-  printf("%u (win)\n", ntohs(bar->window));
 
   return 0;
 }
