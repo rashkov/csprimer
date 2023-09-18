@@ -46,6 +46,7 @@ int main(){
   printf("%ld \t Bytes read\n", bytes_read);
 
   pcap_hdr_t * global = (pcap_hdr_t *) buf;
+  void * end = (unsigned char *)buf + size;
 
   /*
    * Magic Number (32 bits): an unsigned magic number, whose value is either the hexadecimal number 0xA1B2C3D4 or the hexadecimal number 0xA1B23C4D.
@@ -61,7 +62,7 @@ int main(){
   pcap_packet_hdr_t * pcap_packet_hdr = (pcap_packet_hdr_t *) ((unsigned char *)global + sizeof(pcap_hdr_t));
 
   int n = 1;
-  while(n < 4){
+  while((void *)pcap_packet_hdr < (void *)end){
     // Because we have a data link type of zero, that means we have LINKTYPE_NULL
     // which refers to BSD loopback encapsulation https://www.tcpdump.org/linktypes.html
     // which means that the following frame is a link layer header:
