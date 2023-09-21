@@ -62,6 +62,9 @@ int main(){
   pcap_packet_hdr_t * pcap_packet_hdr = (pcap_packet_hdr_t *) ((unsigned char *)global + sizeof(pcap_hdr_t));
 
   int n = 1;
+  int syn_count = 0;
+  int ack_count = 0;
+  int syn_ack_count = 0;
   while((void *)pcap_packet_hdr < (void *)end){
     // Because we have a data link type of zero, that means we have LINKTYPE_NULL
     // which refers to BSD loopback encapsulation https://www.tcpdump.org/linktypes.html
@@ -74,31 +77,38 @@ int main(){
 
     // 44 bytes = 4 byte link layer hdr, 20 byte iphdr, 20 byte tcphdr
     // to advance, the next pcap packet header is global + n*44 or global + n*(captured_packet_length)
-    printf("cap length %d\n", pcap_packet_hdr->captured_packet_length); // prints 44 bytes
+    //printf("\nCaptured %d bytes\n", pcap_packet_hdr->captured_packet_length); // prints 44 bytes
     if(n == 0) assert(pcap_packet_hdr->captured_packet_length == 44);
 
     // get the link type
-    printf("%d (2 means PF_INET or IP protocol)\n", *link_layer_hdr); // 2 => PF_INET
+    //printf("%d (2 means PF_INET or IP protocol)\n", *link_layer_hdr); // 2 => PF_INET
                                                                     // aka ipv4
     assert(*link_layer_hdr == 2);
     // the 4 byte link-layer header indicates an IPv4 packet
     // so the remaining 40 bytes must be an IPv4 packet
-    printf("\n%lu (IP header size)\n", sizeof(struct iphdr));
-    printf("%lu (TCP header size)\n", sizeof(struct tcphdr));
+    // printf("%lu (IP header size)\n", sizeof(struct iphdr)); // 20
+    // printf("%lu (TCP header size)\n", sizeof(struct tcphdr)); // 20
 
     // struct iphdr comes from linux/ip.h
-    printf("%hhu (protocol, TCP is 6)\n", ip_header->protocol);
+    //printf("%hhu (protocol, TCP is 6)\n", ip_header->protocol); // 6
     assert(ip_header->protocol == 6);
-    printf("%hu (IP version field, should be 4)\n", ip_header->version);
+    // printf("%hu (IP version field, should be 4)\n", ip_header->version); // 4
     assert(ip_header->version == 4);
 
     // ChatGPT saved my sanity by pointing out that these are in network byte order
     // so I must convert to host byte order using ntohl() / noths()
-    printf("%u (seq)\n", ntohl(tcp_header->seq));
-    printf("%u (ack seq)\n", ntohl(tcp_header->ack_seq));
-    printf("%u (source)\n", ntohs(tcp_header->source));
-    printf("%u (dest)\n", ntohs(tcp_header->dest));
-    printf("%u (win)\n", ntohs(tcp_header->window));
+    if(tcp_header->syn && tcp_header->ack){
+        syn_ack_count++;
+    }else if(tcp_header->syn){
+        syn_count++;
+    }else if(tcp_header->ack){
+        ack_count++;
+    }
+    //printf("%u (seq)\n", ntohl(tcp_header->seq));
+    //printf("%u (ack seq)\n", ntohl(tcp_header->ack_seq));
+    //printf("%u (source)\n", ntohs(tcp_header->source));
+    //printf("%u (dest)\n", ntohs(tcp_header->dest));
+    //printf("%u (win)\n", ntohs(tcp_header->window));
     if(n == 0) assert(ntohs(tcp_header->window) == 512);
 
 
@@ -107,6 +117,12 @@ int main(){
     pcap_packet_hdr = (pcap_packet_hdr_t *) ((unsigned char *)pcap_packet_hdr + sizeof(*pcap_packet_hdr) + pcap_packet_hdr->captured_packet_length);
     n++;
   }
+
+  printf("Num syn: %d\n", syn_count);
+  printf("Num syn_ack: %d\n", syn_ack_count);
+  printf("Num ack: %d\n", ack_count);
+
+  printf("Ratio syn_ack/syn: %f\n", (float)syn_ack_count/syn_count);
 
   return 0;
 }
