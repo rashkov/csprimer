@@ -27,6 +27,7 @@ int main(){
   int32_t width;
   int32_t height;
   unsigned char * pixels = NULL;
+  unsigned char * out_pixels= NULL;
   int fd, fd2;
   unsigned char * outbuf;
 
@@ -66,32 +67,42 @@ int main(){
   printf("Bitcount (bits per pixel) %" PRIu16 "\n", bitcount);
 
   lseek(fd, header.offset, SEEK_SET);
-  int pxbufsz = width * height * bitcount/8;
+  int bytes_per_px = bitcount/8;
+  int bytes_per_row = width * bytes_per_px;
+  int pxbufsz = bytes_per_row * height;
   pixels = malloc(pxbufsz);
+  out_pixels = malloc(pxbufsz);
   read(fd, pixels, pxbufsz);
 
   // rotate pixels
-  //unsigned char tmp;
-  //int r_new, c_new;
-  //for(int r=0; r < height*bitcount/8/2; r++){
-  //  for(int c=0; c < width*bitcount/8/2; c++){
-  //    // zeroth row maps to last column
-  //    c_new = width - 1 - r;
-  //    // zeroth col maps to zeroth row
-  //    r_new = c;
-  //    tmp = pixels[r * width + c];
-  //    pixels[r * width + c] = pixels[r_new * width + c_new];
-  //    pixels[r_new * width + c_new] = tmp;
-  //  }
+  unsigned char tmp[bytes_per_px];
+  int r_new, c_new;
+  ssize_t offset, new_offset;
+  for(int r=0; r < height; r++){
+    for(int c=0; c < width; c++){
+      // pixels are stored "upside down"
+      // ie. top of image is last row of pixel data
+      // so if we want 90deg right turn of the final picture,
+      // we must actually do a 90deg left turn of pixeld ata
 
-  //  //for(int c=0; c < width / 2; c++){
-  //  //  c_new = width - 1 - c;
-  //  //  r_new = height - 1 - r;
-  //  //  tmp = pixels[r * width + c];
-  //  //  pixels[r * width + c] = pixels[r_new * width + c_new];
-  //  //  pixels[r_new * width + c_new] = tmp;
-  //  //}
-  //}
+      // 90 deg left turn
+      // last row becomes last column
+      c_new = r;
+      // first column becomes last row
+      r_new = height - 1 - c;
+
+      // 90 deg right turn
+      // zeroth row maps to last column
+      // c_new = width - 1 - r;
+      // zeroth col maps to zeroth row
+      // r_new = c;
+
+      offset = r * bytes_per_row + c * bytes_per_px;
+      new_offset = r_new * bytes_per_row + c_new * bytes_per_px;
+
+      memcpy(&(out_pixels[new_offset]), &(pixels[offset]), bytes_per_px);
+    }
+  }
 
   int n;
   // write everything back
@@ -102,7 +113,7 @@ int main(){
     perror("Short read");
     exit(-1);
   }
-  memcpy(outbuf + header.offset, pixels, pxbufsz);
+  memcpy(outbuf + header.offset, out_pixels, pxbufsz);
   lseek(fd, header.offset + pxbufsz, SEEK_SET);
 
   int total = header.offset + pxbufsz;
